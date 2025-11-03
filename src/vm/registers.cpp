@@ -22,7 +22,7 @@ void RegisterFile::Reset() {
 }
 
 uint64_t RegisterFile::ReadGpr(size_t reg) const {
-  if (reg >= NUM_GPR) throw std::out_of_range("Invalid GPR index");
+  if (reg >= NUM_GPR) return 0;//throw std::out_of_range("Invalid GPR index");
   if (reg==0) return 0;
   return gpr_[reg];
 }

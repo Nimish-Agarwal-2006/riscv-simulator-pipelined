@@ -47,23 +47,31 @@ void Stages::Decode() {
     if(if_id.valid==true)
     {
         control_unit_.Decoding_the_instruction(if_id.instruction);
-         id_ex.imm = ImmGenerator(if_id.instruction);
-        if (instruction_set::isFInstruction(if_id.instruction)) { // RV64 F
+        std::cout<<"Debug : if_id.instruction : 0x" << std::hex << if_id.instruction << std::endl;
+        id_ex.imm = ImmGenerator(if_id.instruction);
+        std::cout << "Debug : imm :" << std::hex << id_ex.imm << std::endl;
+  if (instruction_set::isFInstruction(if_id.instruction)) { // RV64 F
     id_ex.execute_type=1;
   } else if (instruction_set::isDInstruction(if_id.instruction)) {
     id_ex.execute_type=2;
   } else if (id_ex.opcode==0b1110011) {
     id_ex.execute_type=3;
   }
-  else
+  else if (id_ex.opcode== 19 || id_ex.opcode == 3 || id_ex.opcode == 103)
   {
     id_ex.reg1_val = registers_.ReadGpr(id_ex.rs1);
-    id_ex.reg2_val= registers_.ReadGpr(id_ex.rs2);
+    //id_ex.reg2_val= registers_.ReadGpr(id_ex.rs2);
+    std::cout << "Debug : rs1 index:"<< std::hex <<(unsigned int)id_ex.rs1 << '\n';
   }
-
-  std::cout << "Debug : rs1 index:"<<id_ex.rs1 << '\n';
+  else
+  {
+        id_ex.reg1_val = registers_.ReadGpr(id_ex.rs1);
+        id_ex.reg2_val= registers_.ReadGpr(id_ex.rs2);
+      std::cout << "Debug : rs1 index:"<< std::hex <<(unsigned int)id_ex.rs1 << '\n';
+      std::cout << "Debug : rs2 index:"<<std::hex << (unsigned int)id_ex.rs2 << '\n';
+  }
   id_ex.valid=true;
-  std::cout << "Debug : id_exvalid :" << id_ex.valid << std::endl;
+  std::cout << "Debug : id_execute_type :" << (unsigned int)id_ex.execute_type << std::endl;
     }
     else
     id_ex.valid=false;
@@ -120,15 +128,15 @@ void Stages::Execute() {
 
   bool overflow = false;
 
-  if (control_unit_.GetAluSrc()) {
+  if (id_ex.aluSrc) {
     id_ex.reg2_val = static_cast<uint64_t>(static_cast<int64_t>(id_ex.imm));
+    std::cout << "Debug : ALU : imm :" << id_ex.reg2_val << std::endl;
   }
-
-  alu::AluOp aluOperation = control_unit_.GetAluSignal_pipelined(control_unit_.GetAluOp());
+  alu::AluOp aluOperation = control_unit_.GetAluSignal_pipelined(id_ex.aluOp);
   std::tie(execution_result_, overflow) = alu_.execute(aluOperation, id_ex.reg1_val, id_ex.reg2_val);
 
 
-  if (control_unit_.GetBranch()) {
+  if (id_ex.branch) {
     if (id_ex.opcode==get_instr_encoding(Instruction::kjalr).opcode || 
         id_ex.opcode==get_instr_encoding(Instruction::kjal).opcode) {
       next_pc_ = static_cast<int64_t>(program_counter_); // PC was already updated in Fetch()
@@ -691,6 +699,7 @@ void Stages::WriteBack() {
       case get_instr_encoding(Instruction::kItype).opcode: /* I-Type */
       case get_instr_encoding(Instruction::kauipc).opcode: /* AUIPC */ {
         registers_.WriteGpr(mem_wb.rd, mem_wb.alu_result);
+        std::cout << "Debug : writeBackToGPR : rd : " << std::hex << (unsigned int)mem_wb.rd << " value : " << (int) mem_wb.alu_result <<  std::endl;
         break;
       }
       case get_instr_encoding(Instruction::kLoadType).opcode: /* Load */ { 
@@ -892,19 +901,19 @@ void Stages::Run() {
   ClearStop();
   uint64_t instruction_executed = 0;
 
-  while (!stop_requested_ && (program_counter_ < program_size_||if_id.valid||id_ex.valid||ex_mem.valid||mem_wb.valid)) {
-    //if (instruction_executed > vm_config::config.getInstructionExecutionLimit())
-      //break;
+  while (!stop_requested_ && (program_counter_ < program_size_ + 16 )) {
+    if (instruction_executed > vm_config::config.getInstructionExecutionLimit())
+      break;
     if(mem_wb.valid==true)
     instruction_executed++;
     WriteBack();
     WriteMemory();
     Execute();
     Decode();
-    if(program_counter_<program_size_)
+    //if(program_counter_<program_size_)
     Fetch();
-    else
-    if_id.valid=false;
+    // else
+    // if_id.valid=false;
     instructions_retired_++;
     
     cycle_s_++;
