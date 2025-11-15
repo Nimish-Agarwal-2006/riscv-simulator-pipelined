@@ -15,7 +15,7 @@ ID_EX id_ex = {
     .imm = INT32_MIN,
     .rs1 = 0xFF, .rs2 = 0xFF,.rs3=0xFF, .rd = 0xFF, .csr=0xFF,
     .funct3 = 0xFF, .funct7 = 0xFF, .opcode = 0xFF, .funct2=0xFF,.funct5=0xFF,
-    .regWrite = false, .memRead = false, .memWrite = false, .branch = false,.branch_flag=false,.branch_prediction=false,
+    .regWrite = false, .memRead = false, .memWrite = false, .branch = false,.branch_flag=false,.branch_predicted=false,
     .aluOp = false,
     .aluSrc = false,
     .execute_type= 0,.rs1_type=0,.rs2_type=0,.rs3_type=0,.rd_type=0,//0 for normal 1 for float 2 for double 3 for csr

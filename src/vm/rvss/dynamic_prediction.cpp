@@ -1,10 +1,10 @@
 /**
  * @file stages.cpp
- * @brief RVSS VM pipeline stages implementation (renamed class: Forward)
+ * @brief RVSS VM pipeline stages implementation (renamed class: Dynamic)
  * @author Vishank Singh, https://github.com/VishankSingh
  */
 
-#include "vm/rvss/forwarding.h"
+#include "vm/rvss/dynamic_prediction.h"
 
 #include "utils.h"
 #include "globals.h"
@@ -26,17 +26,102 @@
 using instruction_set::Instruction;
 using instruction_set::get_instr_encoding;
 
-Forward::Forward() : VmBase() {
+Dynamic::Dynamic() : VmBase() {
   DumpRegisters(globals::registers_dump_file_path, registers_);
   DumpState(globals::vm_state_dump_file_path);
 }
 
-Forward::~Forward() = default;
+Dynamic::~Dynamic() = default;
 
-void Forward::Forward_data(){
+void Dynamic::Branch_Prediction(){
+  if(id_ex.valid && id_ex.branch){
+
+    if(id_ex.opcode==get_instr_encoding(Instruction::kjal).opcode){
+        int last_execution=0;
+
+        if(branch_map_.find(id_ex.pc)!=branch_map_.end()){
+            last_execution=branch_map_[id_ex.pc];
+        }
+        if(last_execution==1){
+            id_ex.branch_predicted=true;
+            UpdateProgramCounter(-program_counter_ + id_ex.pc + id_ex.imm);
+        }
+    }
+    else if(id_ex.opcode==get_instr_encoding(Instruction::kjalr).opcode){
+
+        bool overflow = false;
+        uint64_t alu_operand_2 = id_ex.reg2_val;
+        int64_t res;
+        if (id_ex.aluSrc) {
+          alu_operand_2 = static_cast<uint64_t>(static_cast<int64_t>(id_ex.imm));
+        }
+        alu::AluOp aluOperation = control_unit_.GetAluSignal_pipelined(id_ex.aluOp);
+        std::tie(res, overflow) = alu_.execute(aluOperation, id_ex.reg1_val, alu_operand_2);
+
+        int last_execution=0;
+
+        if(branch_map_.find(id_ex.pc)!=branch_map_.end()){
+            last_execution=branch_map_[id_ex.pc];
+        }
+
+        if(last_execution==1){
+            UpdateProgramCounter(-program_counter_ + res);
+            id_ex.branch_predicted=true;
+        }
+
+    }
+    else {
+        int last_execution=0;
+
+        if(branch_map_.find(id_ex.pc)!=branch_map_.end()){
+            last_execution=branch_map_[id_ex.pc];
+        }
+        if(last_execution==1){
+            id_ex.branch_predicted=true;
+            UpdateProgramCounter(-program_counter_+id_ex.pc+id_ex.imm);
+        }
+
+    }
+  }
+}
+
+void Dynamic:: Check_Prediction(){
+  if(!id_ex.valid || !id_ex.branch) return;
+  std::cout<<"prediction and flag "<<id_ex.branch_predicted <<" "<<id_ex.branch_flag<<"\n";
+  if(id_ex.branch_predicted != id_ex.branch_flag){
+    // only need to check for branch
+    if(id_ex.opcode==0b1100011){
+        if(id_ex.branch_predicted){
+            UpdateProgramCounter(-program_counter_ + id_ex.pc+4);
+        }
+        else {
+            UpdateProgramCounter(-program_counter_ + id_ex.pc + id_ex.imm);
+        }
+        if_id.valid=false;
+    }
+    else if(id_ex.opcode==get_instr_encoding(Instruction::kjal).opcode){
+        // assuming prediction false flag true
+        // later on change
+        if_id.valid=false;
+        UpdateProgramCounter(-program_counter_ + id_ex.pc + id_ex.imm);
+    }
+    else if(id_ex.opcode==get_instr_encoding(Instruction::kjalr).opcode){
+        // same problem as predict not taken  then taken
+        bool overflow = false;
+        uint64_t alu_operand_2 = static_cast<uint64_t>(static_cast<int64_t>(id_ex.imm));;
+        int64_t res;
+        alu::AluOp aluOperation = control_unit_.GetAluSignal_pipelined(id_ex.aluOp);
+        std::tie(res, overflow) = alu_.execute(aluOperation, id_ex.reg1_val, alu_operand_2);
+        if_id.valid=false;
+        UpdateProgramCounter(-program_counter_ + res);
+    }
+  }
+}
+
+void Dynamic::Forward_Data(){
 
 bool stall=false;
-
+  if(!id_ex.valid) return;
   if(mem_wb.valid){
         // prev to prev load no nop 
         if(mem_wb.memToReg){
@@ -131,27 +216,9 @@ bool stall=false;
     }
 
 }
-void Forward::Control_Hazard(){
-    bool branch_stall=false;
-
-    if(id_ex.valid && id_ex.branch){
-      if(id_ex.opcode==get_instr_encoding(Instruction::kjalr).opcode ||
-          id_ex.opcode==get_instr_encoding(Instruction::kjal).opcode || 
-          id_ex.branch_flag){
-          std::cout<<" branch stall become true\n";
-          branch_stall=true;
-          //std::cout<<"id_ex branch rs1 rs2 "<<+id_ex.rs1<<" "<<id_ex.rs2<<"\n"; 
-      }
-    }
-
-      if(id_ex.valid && branch_stall){
-        //id_ex.valid=false;
-        if_id.valid=false;
-      }
-}
 
 
-void Forward::Fetch() {
+void Dynamic::Fetch() {
   
   current_instruction_ = memory_controller_.ReadWord(program_counter_);
   if_id.instruction=current_instruction_;
@@ -162,24 +229,19 @@ void Forward::Fetch() {
 }
 
 
-/**
- * @brief Decodes instructions, reads from register files, and handles register typing.
- */
-/**
- * @brief Decodes instructions, reads from register files, and handles register typing.
- */
-/**
- * @brief Decodes instructions, reads from register files, and handles register typing.
- */
-/**
- * @brief Decodes instructions, reads from register files, and handles register typing.
- */
-void Forward::Decode() {
-    // If the previous stage is invalid (e.g., stall), pass the bubble
+
+void Dynamic::Decode() {
+
     if (!if_id.valid) {
         id_ex.valid = false;
+        
+        id_ex.branch_flag = false;
+        id_ex.branch_predicted = false;
+        id_ex.branch = false; // Ensure control signal is off
         return;
     }
+            id_ex.branch_flag = false;
+        id_ex.branch_predicted = false;
 
     // --- 1. Decode and set basic info ---
     control_unit_.Decoding_the_instruction(if_id.instruction);
@@ -278,7 +340,7 @@ void Forward::Decode() {
         //id_ex.rs2_type = 0;
     }
 }
-// void Forward::Decode() {
+// void Dynamic::Decode() {
 //   // if(if_id.valid) std::cout<<"decode is valid \n";
 //   // else std::cout<<"decode is invalid\n";
 
@@ -323,7 +385,7 @@ void Forward::Decode() {
 //     id_ex.valid=false;
 // }
 
-void Forward::Execute() {
+void Dynamic::Execute() {
  // uint8_t opcode = current_instruction_ & 0b1111111;
   //uint8_t funct3 = (current_instruction_ >> 12) & 0b111;
 
@@ -422,15 +484,16 @@ void Forward::Execute() {
       next_pc_ = static_cast<int64_t>(program_counter_); // PC was already updated in Fetch()
       //UpdateProgramCounter(-4);
       //return_address_ = program_counter_ + 4;
+      id_ex.branch_flag=true;
       return_address_=id_ex.pc+4;
       // need to check here
       //============================
       if (id_ex.opcode==get_instr_encoding(Instruction::kjalr).opcode) { 
-        UpdateProgramCounter(-program_counter_ + (execution_result_));
+        //UpdateProgramCounter(-program_counter_ + (execution_result_));
       } 
       //=============================
       else if (id_ex.opcode==get_instr_encoding(Instruction::kjal).opcode) {
-        UpdateProgramCounter(-program_counter_+id_ex.pc+id_ex.imm);
+        //UpdateProgramCounter(-program_counter_+id_ex.pc+id_ex.imm);
       }
     } else if (id_ex.opcode==get_instr_encoding(Instruction::kbeq).opcode ||
                id_ex.opcode==get_instr_encoding(Instruction::kbne).opcode ||
@@ -470,12 +533,15 @@ void Forward::Execute() {
 
 
   }
-
-  // imm - 8 will give correct branch 1st instruction 
-  if (id_ex.branch_flag && id_ex.opcode==0b1100011) {
-    //UpdateProgramCounter(id_ex.imm-8);
-    UpdateProgramCounter(-program_counter_+id_ex.pc + id_ex.imm);
+  if(id_ex.branch){
+    uint64_t instruction_map=id_ex.pc;
+    if(id_ex.branch_flag){
+        branch_map_[instruction_map]=1;
+    }
+    else branch_map_[instruction_map]=0;
   }
+
+
 
 
   if (id_ex.opcode==get_instr_encoding(Instruction::kauipc).opcode) { // AUIPC
@@ -505,7 +571,7 @@ ex_mem.valid=false;
 //std::cout<<"after float "<<(unsigned int)id_ex.rs2_type<<"\n";
 }
 
-void Forward::ExecuteFloat() {
+void Dynamic::ExecuteFloat() {
   // uint8_t opcode = current_instruction_ & 0b1111111;
   // uint8_t funct3 = (current_instruction_ >> 12) & 0b111;
   // uint8_t funct7 = (current_instruction_ >> 25) & 0b1111111;
@@ -544,7 +610,7 @@ void Forward::ExecuteFloat() {
   registers_.WriteCsr(0x003, fcsr_status);
 }
 
-void Forward::ExecuteDouble() {
+void Dynamic::ExecuteDouble() {
   // uint8_t opcode = current_instruction_ & 0b1111111;
   // uint8_t funct3 = (current_instruction_ >> 12) & 0b111;
   // uint8_t funct7 = (current_instruction_ >> 25) & 0b1111111;
@@ -573,7 +639,7 @@ void Forward::ExecuteDouble() {
   std::tie(execution_result_, fcsr_status) = alu::Alu::dfpexecute(aluOperation, reg1_value, reg2_value, reg3_value, rm);
 }
 
-void Forward::ExecuteCsr() {
+void Dynamic::ExecuteCsr() {
   //uint8_t rs1 = (current_instruction_ >> 15) & 0b11111;
   //uint16_t csr = (current_instruction_ >> 20) & 0xFFF;
   uint64_t csr_val = registers_.ReadCsr(id_ex.csr);
@@ -585,7 +651,7 @@ void Forward::ExecuteCsr() {
 }
 
 // TODO: implement writeback for syscalls
-void Forward::HandleSyscall() {
+void Dynamic::HandleSyscall() {
   uint64_t syscall_number = registers_.ReadGpr(17);
   switch (syscall_number) {
     case SYSCALL_PRINT_INT: {
@@ -758,7 +824,7 @@ void Forward::HandleSyscall() {
   }
 }
 
-void Forward::WriteMemory() {
+void Dynamic::WriteMemory() {
   // uint8_t opcode = current_instruction_ & 0b1111111;
   // uint8_t rs2 = (current_instruction_ >> 20) & 0b11111;
   // uint8_t funct3 = (current_instruction_ >> 12) & 0b111;
@@ -908,7 +974,7 @@ else
   mem_wb.valid=false;
 }
 
-void Forward::WriteMemoryFloat() {
+void Dynamic::WriteMemoryFloat() {
   //uint8_t rs2 = (current_instruction_ >> 20) & 0b11111;
 
   if (ex_mem.memRead) { // FLW
@@ -944,7 +1010,7 @@ void Forward::WriteMemoryFloat() {
   mem_wb.mem_data=memory_result_;
 }
 
-void Forward::WriteMemoryDouble() {
+void Dynamic::WriteMemoryDouble() {
   //uint8_t rs2 = (current_instruction_ >> 20) & 0b11111;
 
   if (ex_mem.memRead) {// FLD
@@ -972,7 +1038,7 @@ void Forward::WriteMemoryDouble() {
   mem_wb.mem_data=memory_result_;
 }
 
-void Forward::WriteBack() {
+void Dynamic::WriteBack() {
 
   // if(mem_wb.valid) std::cout<<"write back is valid\n";
   // else std::cout<<"write back is invaldi\n";
@@ -1050,7 +1116,7 @@ void Forward::WriteBack() {
   }
 }
 
-void Forward::WriteBackFloat() {
+void Dynamic::WriteBackFloat() {
   // uint8_t opcode = current_instruction_ & 0b1111111;
   // uint8_t funct7 = (current_instruction_ >> 25) & 0b1111111;
   // uint8_t rd = (current_instruction_ >> 7) & 0b11111;
@@ -1127,7 +1193,7 @@ void Forward::WriteBackFloat() {
   }
 }
 
-void Forward::WriteBackDouble() {
+void Dynamic::WriteBackDouble() {
   // uint8_t opcode = current_instruction_ & 0b1111111;
   // uint8_t funct7 = (current_instruction_ >> 25) & 0b1111111;
   // uint8_t rd = (current_instruction_ >> 7) & 0b11111;
@@ -1168,7 +1234,7 @@ void Forward::WriteBackDouble() {
   return;
 }
 
-void Forward::WriteBackCsr() {
+void Dynamic::WriteBackCsr() {
   uint8_t rd = (current_instruction_ >> 7) & 0b11111;
   uint8_t funct3 = (current_instruction_ >> 12) & 0b111;
 
@@ -1215,7 +1281,7 @@ void Forward::WriteBackCsr() {
 
 }
 
-void Forward::Run() {
+void Dynamic::Run() {
   ClearStop();
   uint64_t instruction_executed = 0;
   int count=1;
@@ -1237,12 +1303,14 @@ void Forward::Run() {
     WriteBack();
     WriteMemory();
     Execute();
-    Control_Hazard();
-
+    //Control_Hazard();
+    //std::cout<<"branch flag after execute "<<id_ex.branch_flag<<"\n";
+    Check_Prediction();
     Decode();
-
-    Forward_data();
-
+    //std::cout<<"pc after decode"<<program_counter_<<"\n";
+    Forward_Data();
+    Branch_Prediction();
+    //std::cout<<"pc after update"<<program_counter_<<"\n";
     Fetch();
 
 
@@ -1276,6 +1344,9 @@ void Forward::Run() {
               << " | rd_type: "<< (unsigned int)id_ex.rd_type
               << " | opcode: "<<(unsigned int)id_ex.opcode
               << " | funct7: "<<(unsigned int)id_ex.funct7
+              << " | predict: "<<(unsigned int)id_ex.branch_predicted
+              << " | branch_flag: "<<(unsigned int)id_ex.branch_flag
+              << " | branch: "<<(unsigned int)id_ex.branch
               << " | imm: 0x" << std::hex << id_ex.imm << std::dec
               << "\n";
 
@@ -1288,6 +1359,7 @@ void Forward::Run() {
               << " | ALU_Result: 0x" << std::hex << ex_mem.alu_result << std::dec
               << " | regWrite: " << ex_mem.regWrite
               << " | memRead: " << ex_mem.memRead
+
               << "\n";
 
     // --- MEM/WB Register State ---
@@ -1319,7 +1391,7 @@ void Forward::Run() {
   DumpState(globals::vm_state_dump_file_path);
 }
 
-void Forward::DebugRun() {
+void Dynamic::DebugRun() {
   ClearStop();
   uint64_t instruction_executed = 0;
   while (!stop_requested_ && program_counter_ < program_size_) {
@@ -1371,7 +1443,7 @@ void Forward::DebugRun() {
   DumpState(globals::vm_state_dump_file_path);
 }
 
-void Forward::Step() {
+void Dynamic::Step() {
   current_delta_.old_pc = program_counter_;
   if (program_counter_ < program_size_) {
     Fetch();
@@ -1411,7 +1483,7 @@ void Forward::Step() {
   DumpState(globals::vm_state_dump_file_path);
 }
 
-void Forward::Undo() {
+void Dynamic::Undo() {
   if (undo_stack_.empty()) {
     std::cout << "VM_NO_MORE_UNDO" << std::endl;
     output_status_ = "VM_NO_MORE_UNDO";
@@ -1467,7 +1539,7 @@ void Forward::Undo() {
   DumpState(globals::vm_state_dump_file_path);
 }
 
-void Forward::Redo() {
+void Dynamic::Redo() {
   if (redo_stack_.empty()) {
     std::cout << "VM_NO_MORE_REDO" << std::endl;
     return;
@@ -1518,7 +1590,7 @@ void Forward::Redo() {
 
 }
 
-void Forward::Reset() {
+void Dynamic::Reset() {
   program_counter_ = 0;
   instructions_retired_ = 0;
   cycle_s_ = 0;

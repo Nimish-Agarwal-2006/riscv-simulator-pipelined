@@ -4,8 +4,8 @@
  * @author Vishank
  */
 
-#ifndef FORWARD_H
-#define FORWARD_H
+#ifndef PREDICTION_H
+#define PREDICTION_H
 
 #include "vm/vm_base.h"
 #include "rvss_control_unit.h"
@@ -63,6 +63,8 @@ class Prediction : public VmBase {
   // --- Pipeline Stage Functions ---
   void Forward_Data();
   void Branch_Control();
+  void Branch_Prediction();
+  void Check_Prediction();
   void Fetch();
   void Decode();
   void Execute();

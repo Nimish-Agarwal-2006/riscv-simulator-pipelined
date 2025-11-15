@@ -18,7 +18,7 @@ struct ID_EX {
     uint8_t rs1, rs2,rs3, rd;
     uint16_t csr;
     uint8_t funct3, funct7, opcode,funct2,funct5;
-    bool regWrite, memRead, memWrite, branch, branch_flag,branch_prediction;
+    bool regWrite, memRead, memWrite, branch, branch_flag,branch_predicted;
     bool aluOp;
     bool aluSrc;
     uint8_t execute_type,rs1_type,rs2_type,rs3_type,rd_type;

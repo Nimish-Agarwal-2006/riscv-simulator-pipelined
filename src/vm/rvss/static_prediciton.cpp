@@ -33,10 +33,57 @@ Prediction::Prediction() : VmBase() {
 
 Prediction::~Prediction() = default;
 
+void Prediction::Branch_Prediction(){
+  if(id_ex.valid && id_ex.branch){
+
+    if(id_ex.opcode==get_instr_encoding(Instruction::kjal).opcode){
+      UpdateProgramCounter(-program_counter_ + id_ex.pc + id_ex.imm);
+      id_ex.branch_predicted=true;
+    }
+    else if(id_ex.opcode==get_instr_encoding(Instruction::kjalr).opcode){
+
+        bool overflow = false;
+        uint64_t alu_operand_2 = id_ex.reg2_val;
+        int64_t res;
+        if (id_ex.aluSrc) {
+          alu_operand_2 = static_cast<uint64_t>(static_cast<int64_t>(id_ex.imm));
+        }
+        alu::AluOp aluOperation = control_unit_.GetAluSignal_pipelined(id_ex.aluOp);
+        std::tie(res, overflow) = alu_.execute(aluOperation, id_ex.reg1_val, alu_operand_2);
+        UpdateProgramCounter(-program_counter_ + res);
+        id_ex.branch_predicted=true;
+    }
+    else {
+      if(id_ex.imm < 0){
+        id_ex.branch_predicted=true;
+        UpdateProgramCounter(-program_counter_+id_ex.pc+id_ex.imm);
+      }
+    }
+  }
+}
+
+void Prediction:: Check_Prediction(){
+  if(!id_ex.valid || !id_ex.branch) return;
+  //std::cout<<"prediction and flag "<<id_ex.branch_predicted <<" "<<id_ex.branch_flag<<"\n";
+  if(id_ex.branch_predicted != id_ex.branch_flag){
+    // only need to check for branch
+    if(id_ex.opcode==0b1100011){
+      if(id_ex.imm < 0 ){
+        UpdateProgramCounter(-program_counter_ + id_ex.pc + 4);
+        if_id.valid=false;
+      }
+      else{
+        UpdateProgramCounter(-program_counter_ + id_ex.pc + id_ex.imm);
+        if_id.valid=false;
+      }
+    }
+  }
+}
+
 void Prediction::Forward_Data(){
 
 bool stall=false;
-
+  if(!id_ex.valid) return;
   if(mem_wb.valid){
         // prev to prev load no nop 
         if(mem_wb.memToReg){
@@ -131,24 +178,6 @@ bool stall=false;
     }
 
 }
-void Prediction::Branch_Control(){
-    bool branch_stall=false;
-
-    if(id_ex.valid && id_ex.branch){
-      if(id_ex.opcode==get_instr_encoding(Instruction::kjalr).opcode ||
-          id_ex.opcode==get_instr_encoding(Instruction::kjal).opcode || 
-          id_ex.branch_flag){
-          std::cout<<" branch stall become true\n";
-          branch_stall=true;
-          //std::cout<<"id_ex branch rs1 rs2 "<<+id_ex.rs1<<" "<<id_ex.rs2<<"\n"; 
-      }
-    }
-
-      if(id_ex.valid && branch_stall){
-        //id_ex.valid=false;
-        if_id.valid=false;
-      }
-}
 
 
 void Prediction::Fetch() {
@@ -162,24 +191,19 @@ void Prediction::Fetch() {
 }
 
 
-/**
- * @brief Decodes instructions, reads from register files, and handles register typing.
- */
-/**
- * @brief Decodes instructions, reads from register files, and handles register typing.
- */
-/**
- * @brief Decodes instructions, reads from register files, and handles register typing.
- */
-/**
- * @brief Decodes instructions, reads from register files, and handles register typing.
- */
+
 void Prediction::Decode() {
-    // If the previous stage is invalid (e.g., stall), pass the bubble
+
     if (!if_id.valid) {
         id_ex.valid = false;
+        
+        id_ex.branch_flag = false;
+        id_ex.branch_predicted = false;
+        id_ex.branch = false; // Ensure control signal is off
         return;
     }
+            id_ex.branch_flag = false;
+        id_ex.branch_predicted = false;
 
     // --- 1. Decode and set basic info ---
     control_unit_.Decoding_the_instruction(if_id.instruction);
@@ -426,11 +450,11 @@ void Prediction::Execute() {
       // need to check here
       //============================
       if (id_ex.opcode==get_instr_encoding(Instruction::kjalr).opcode) { 
-        UpdateProgramCounter(-program_counter_ + (execution_result_));
+        //UpdateProgramCounter(-program_counter_ + (execution_result_));
       } 
       //=============================
       else if (id_ex.opcode==get_instr_encoding(Instruction::kjal).opcode) {
-        UpdateProgramCounter(-program_counter_+id_ex.pc+id_ex.imm);
+        //UpdateProgramCounter(-program_counter_+id_ex.pc+id_ex.imm);
       }
     } else if (id_ex.opcode==get_instr_encoding(Instruction::kbeq).opcode ||
                id_ex.opcode==get_instr_encoding(Instruction::kbne).opcode ||
@@ -471,9 +495,10 @@ void Prediction::Execute() {
 
   }
 
+  std::cout<<"after execution branch flag "<<id_ex.branch_flag<<"\n";
   // imm - 8 will give correct branch 1st instruction 
   if (id_ex.branch_flag && id_ex.opcode==0b1100011) {
-    UpdateProgramCounter(id_ex.imm-8);
+    //UpdateProgramCounter(id_ex.imm-8);
     //UpdateProgramCounter(-program_counter_+id_ex.pc + id_ex.imm);
   }
 
@@ -1220,7 +1245,7 @@ void Prediction::Run() {
   uint64_t instruction_executed = 0;
   int count=1;
   bool prev_stall=false;
-  while (!stop_requested_  && (program_counter_  < program_size_ + 16)) {
+  while (!stop_requested_   &&count<500 &&(program_counter_  < program_size_ + 16)) {
     //if (instruction_executed > vm_config::config.getInstructionExecutionLimit())
     //break
 
@@ -1237,12 +1262,13 @@ void Prediction::Run() {
     WriteBack();
     WriteMemory();
     Execute();
-    Branch_Control();
-
+    //Control_Hazard();
+    Check_Prediction();
     Decode();
-
+    std::cout<<"pc after decode"<<program_counter_<<"\n";
     Forward_Data();
-
+    Branch_Prediction();
+    std::cout<<"pc after update"<<program_counter_<<"\n";
     Fetch();
 
 
@@ -1276,6 +1302,9 @@ void Prediction::Run() {
               << " | rd_type: "<< (unsigned int)id_ex.rd_type
               << " | opcode: "<<(unsigned int)id_ex.opcode
               << " | funct7: "<<(unsigned int)id_ex.funct7
+              << " | predict: "<<(unsigned int)id_ex.branch_predicted
+              << " | branch_flag: "<<(unsigned int)id_ex.branch_flag
+              << " | branch: "<<(unsigned int)id_ex.branch
               << " | imm: 0x" << std::hex << id_ex.imm << std::dec
               << "\n";
 
@@ -1288,6 +1317,7 @@ void Prediction::Run() {
               << " | ALU_Result: 0x" << std::hex << ex_mem.alu_result << std::dec
               << " | regWrite: " << ex_mem.regWrite
               << " | memRead: " << ex_mem.memRead
+
               << "\n";
 
     // --- MEM/WB Register State ---
@@ -1309,8 +1339,6 @@ void Prediction::Run() {
     instructions_retired_++;
     count++;
     //std::cout<<"rd "<<+id_ex.rd<<" imm "<<id_ex.imm<<"\n\n";
-
-    cycle_s_++;
     //std::cout << "Program Counter: " << program_counter_ << std::endl;
   }
   if (program_counter_ >= program_size_) {

@@ -1,22 +1,23 @@
 /**
- * @file hazards.h
- * @brief Pipeline Hazards definition (formerly RVSS VM)
+ * @file stages.h
+ * @brief Pipeline Dynamic definition (formerly RVSS VM)
  * @author Vishank
  */
 
-#ifndef HAZARDS_H
-#define HAZARDS_H
+#ifndef DYNAMIC_H
+#define DYNAMIC_H
 
 #include "vm/vm_base.h"
 #include "rvss_control_unit.h"
 #include "rvss_vm.h"
-#include "vm/pipelined_registers.h"
+
 #include <stack>
 #include <vector>
 #include <iostream>
 #include <cstdint>
 #include <atomic>
-
+#include <map>
+#include <unordered_map>
 // struct RegisterChange {
 //   unsigned int reg_index;
 //   unsigned int reg_type; // 0 for GPR, 1 for CSR, 2 for FPR
@@ -37,13 +38,14 @@
 //   std::vector<MemoryChange> memory_changes;
 // };
 
-class Hazards : public VmBase {
+class Dynamic : public VmBase {
  public:
   RVSSControlUnit control_unit_;
   std::atomic<bool> stop_requested_ = false;
 
   std::stack<StepDelta> undo_stack_;
   std::stack<StepDelta> redo_stack_;
+  std::map<uint64_t,int> branch_map_;
   StepDelta current_delta_;
 
   // Intermediate variables
@@ -61,8 +63,10 @@ class Hazards : public VmBase {
   uint8_t csr_uimm_{};
 
   // --- Pipeline Stage Functions ---
-  void DataHazard();
-  bool ControlHazard();
+  void Forward_Data();
+  void Branch_Control();
+  void Branch_Prediction();
+  void Check_Prediction();
   void Fetch();
   void Decode();
   void Execute();
@@ -81,8 +85,8 @@ class Hazards : public VmBase {
   void WriteBackCsr();
 
   // --- Lifecycle Methods ---
-  Hazards();
-  ~Hazards();
+  Dynamic();
+  ~Dynamic();
 
   void Run() override;
   void DebugRun() override;
@@ -99,16 +103,14 @@ class Hazards : public VmBase {
   bool IsStopRequested() const {
     return stop_requested_;
   }
-  
+
   void ClearStop() {
     stop_requested_ = false;
   }
 
   void PrintType() {
-    std::cout << "hazards" << std::endl;
+    std::cout << "stages" << std::endl;
   }
-
 };
 
-
-#endif // HAZARDS_H
+#endif // FORWARD_H

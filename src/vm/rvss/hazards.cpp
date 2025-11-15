@@ -35,6 +35,7 @@ Hazards::~Hazards() = default;
 
 
 void Hazards::DataHazard(){
+    if(!id_ex.valid) return;
     bool stall=false;
       if(ex_mem.valid){
         if(ex_mem.regWrite || ex_mem.memRead){
@@ -76,23 +77,12 @@ void Hazards::DataHazard(){
       
     }
 }
-void Hazards::ControlHazard(){
-  bool branch_stall=false;
-
+bool Hazards::ControlHazard(){
     if(id_ex.valid && id_ex.branch){
-      if(id_ex.opcode==get_instr_encoding(Instruction::kjalr).opcode ||
-          id_ex.opcode==get_instr_encoding(Instruction::kjal).opcode || 
-          id_ex.branch_flag){
-          std::cout<<" branch stall become true\n";
-          branch_stall=true;
-          //std::cout<<"id_ex branch rs1 rs2 "<<+id_ex.rs1<<" "<<id_ex.rs2<<"\n"; 
-      }
+      if_id.valid=false;
+      return true;
     }
-
-      if(id_ex.valid && branch_stall){
-        //id_ex.valid=false;
-        if_id.valid=false;
-      }
+    return false;
 }
 
 
@@ -1124,15 +1114,8 @@ void Hazards::Run() {
   uint64_t instruction_executed = 0;
   int count=1;
   bool prev_stall=false;
-  while (!stop_requested_  && count<500 && (program_counter_  < program_size_ + 16)) {
-    //if (instruction_executed > vm_config::config.getInstructionExecutionLimit())
-    //break
-
-    bool stall=false;
-    bool branch_stall=false;
-
-    //std::cout<<"count "<<count<<"\n\n";
-    //
+  while (!stop_requested_  && count<600 && (program_counter_  < program_size_ + 16)) {
+    bool branch=false;
     std::cout<<"Current PC "<<program_counter_<<"\n";
     if(mem_wb.valid==true)
     instruction_executed++;
@@ -1141,24 +1124,13 @@ void Hazards::Run() {
     WriteBack();
     WriteMemory();
     Execute();
-
-    ControlHazard();
-
+    
     Decode();
-
+    branch=ControlHazard();
     DataHazard();
-
+    if(!branch)
     Fetch();
 
-
-
-
-
-    //if(stall) std::cout<<"HALOOOOOOOOOOOOOOOOOO\n";
-
-    //else
-    //if_id.valid=false;
-    // --- Cycle End ---
     std::cout << "\n================= CYCLE " << std::dec << cycle_s_ << " END =================\n";
     std::cout << "Current PC: 0x" << std::hex << program_counter_ << std::dec << "\n";
 
