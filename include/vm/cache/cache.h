@@ -6,9 +6,12 @@
 #ifndef CACHE_H
 #define CACHE_H
 
+#include "vm/vm_base.h"
 #include <cstdint>
-#include <vector>
-
+#include <bits/stdc++.h>
+#include "memory_controller.h"
+#include <random>
+#include <memory>
 namespace cache {
 
 enum class ReplacementPolicy {
@@ -71,13 +74,33 @@ struct CacheSet {
   CacheSet(unsigned long assoc)
     : associativity(assoc), lines(assoc) {}
 };
-
+struct CacheSetstorer;
 class Cache {
+  public:
+  MemoryController* memory_ = nullptr;
   bool enabled; ///< Flag to indicate if the cache is enabled
   CacheType type; ///< Type of cache (instruction or data)
   CacheConfig config; ///< Configuration of the cache
   CacheStats stats; ///< Statistics for the cache
+  std::unique_ptr<CacheSetstorer> impl_;
+  uint64_t GetIndex(uint64_t address) const;
+  uint64_t GetTag(uint64_t address) const;
+  uint64_t FindVictim(uint64_t data);
+  public:
+  Cache();
+  explicit Cache(const CacheConfig& cfg);
+  ~Cache();
+  inline uint64_t BlockSizeBytes() const;
+   inline uint64_t NumSets() const;
+  void SetEnabled(bool en);
+  bool IsEnabled() const;
+  void SetMemory(MemoryController* mem);
+  void ResetStats();
+  CacheStats GetStats() const;
 
+  bool Read(uint64_t address, size_t noofbytes, std::vector<uint8_t>& data_out);
+  bool Write(uint64_t address, const std::vector<uint8_t>& data_in);
+  //std::unique_ptr<class CacheSetstorer> impl_;
 
 };
 
