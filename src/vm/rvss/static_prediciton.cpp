@@ -42,6 +42,7 @@ void Prediction::Branch_Prediction(){
     }
     else if(id_ex.opcode==get_instr_encoding(Instruction::kjalr).opcode){
 
+      // mini alu for jalr
         bool overflow = false;
         uint64_t alu_operand_2 = id_ex.reg2_val;
         int64_t res;
@@ -64,9 +65,8 @@ void Prediction::Branch_Prediction(){
 
 void Prediction:: Check_Prediction(){
   if(!id_ex.valid || !id_ex.branch) return;
-  //std::cout<<"prediction and flag "<<id_ex.branch_predicted <<" "<<id_ex.branch_flag<<"\n";
   if(id_ex.branch_predicted != id_ex.branch_flag){
-    // only need to check for branch
+    // only need to check for conditional branch
     if(id_ex.opcode==0b1100011){
       if(id_ex.imm < 0 ){
         UpdateProgramCounter(-program_counter_ + id_ex.pc + 4);
@@ -1245,40 +1245,18 @@ void Prediction::Run() {
   uint64_t instruction_executed = 0;
   int count=1;
   bool prev_stall=false;
-  while (!stop_requested_   &&count<500 &&(program_counter_  < program_size_ + 16)) {
-    //if (instruction_executed > vm_config::config.getInstructionExecutionLimit())
-    //break
+  while (!stop_requested_   &&count<2000 &&(program_counter_  < program_size_ + 16)) {
 
-    bool stall=false;
-    bool branch_stall=false;
-
-    //std::cout<<"count "<<count<<"\n\n";
-    //
-    std::cout<<"Current PC "<<program_counter_<<"\n";
-    if(mem_wb.valid==true)
-    instruction_executed++;
-    if(prev_stall) id_ex.valid=false;
 
     WriteBack();
     WriteMemory();
     Execute();
-    //Control_Hazard();
     Check_Prediction();
     Decode();
-    std::cout<<"pc after decode"<<program_counter_<<"\n";
     Forward_Data();
     Branch_Prediction();
-    std::cout<<"pc after update"<<program_counter_<<"\n";
     Fetch();
 
-
-
-
-
-    //if(stall) std::cout<<"HALOOOOOOOOOOOOOOOOOO\n";
-
-    //else
-    //if_id.valid=false;
     // --- Cycle End ---
     std::cout << "\n================= CYCLE " << std::dec << cycle_s_ << " END =================\n";
     std::cout << "Current PC: 0x" << std::hex << program_counter_ << std::dec << "\n";

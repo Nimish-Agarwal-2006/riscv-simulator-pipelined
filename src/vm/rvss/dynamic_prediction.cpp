@@ -50,6 +50,8 @@ void Dynamic::Branch_Prediction(){
     else if(id_ex.opcode==get_instr_encoding(Instruction::kjalr).opcode){
 
         bool overflow = false;
+
+        // mini alu just to get final address for jalr jump
         uint64_t alu_operand_2 = id_ex.reg2_val;
         int64_t res;
         if (id_ex.aluSrc) {
@@ -72,7 +74,6 @@ void Dynamic::Branch_Prediction(){
     }
     else {
         int last_execution=0;
-
         if(branch_map_.find(id_ex.pc)!=branch_map_.end()){
             last_execution=branch_map_[id_ex.pc];
         }
@@ -87,7 +88,6 @@ void Dynamic::Branch_Prediction(){
 
 void Dynamic:: Check_Prediction(){
   if(!id_ex.valid || !id_ex.branch) return;
-  std::cout<<"prediction and flag "<<id_ex.branch_predicted <<" "<<id_ex.branch_flag<<"\n";
   if(id_ex.branch_predicted != id_ex.branch_flag){
     // only need to check for branch
     if(id_ex.opcode==0b1100011){
@@ -100,13 +100,10 @@ void Dynamic:: Check_Prediction(){
         if_id.valid=false;
     }
     else if(id_ex.opcode==get_instr_encoding(Instruction::kjal).opcode){
-        // assuming prediction false flag true
-        // later on change
         if_id.valid=false;
         UpdateProgramCounter(-program_counter_ + id_ex.pc + id_ex.imm);
     }
     else if(id_ex.opcode==get_instr_encoding(Instruction::kjalr).opcode){
-        // same problem as predict not taken  then taken
         bool overflow = false;
         uint64_t alu_operand_2 = static_cast<uint64_t>(static_cast<int64_t>(id_ex.imm));;
         int64_t res;
@@ -1286,7 +1283,7 @@ void Dynamic::Run() {
   uint64_t instruction_executed = 0;
   int count=1;
   bool prev_stall=false;
-  while (!stop_requested_  && count<500 &&(program_counter_  < program_size_ + 16)) {
+  while (!stop_requested_  && count<2000 &&(program_counter_  < program_size_ + 16)) {
     //if (instruction_executed > vm_config::config.getInstructionExecutionLimit())
     //break
 

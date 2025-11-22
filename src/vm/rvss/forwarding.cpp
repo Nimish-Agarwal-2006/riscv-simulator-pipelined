@@ -35,8 +35,7 @@ Forward::~Forward() = default;
 
 void Forward::Forward_data(){
 
-bool stall=false;
-
+  bool stall=false;
   if(mem_wb.valid){
         // prev to prev load no nop 
         if(mem_wb.memToReg){
@@ -57,12 +56,8 @@ bool stall=false;
                 }
     
         }
-        // prev to prev alu pass
-        /* ===========================================
-        regwrite is on for load so earlier it was if statement overwriting the data 
-        ============================================ */
+        // prev to prev alu arith 
         else if(mem_wb.regWrite){
-            //std::cout<<""
             if(mem_wb.rd==id_ex.rs1){
               if(mem_wb.rd_type==id_ex.rs1_type){
                 if(!(mem_wb.rd_type==0 && mem_wb.rd==0)){
@@ -84,7 +79,6 @@ bool stall=false;
     if(ex_mem.valid){
         // prev instruction is load
         if(ex_mem.memRead){
-
             if(ex_mem.rd==id_ex.rs1){
               if(ex_mem.rd_type==id_ex.rs1_type){
                 if(!(ex_mem.rd_type==0 && ex_mem.rd==0)){
@@ -103,12 +97,9 @@ bool stall=false;
         }
         // prev is alu pass
         else if(ex_mem.regWrite){
-
-
             if(ex_mem.rd==id_ex.rs1){
               if(ex_mem.rd_type==id_ex.rs1_type){
                 if(!(ex_mem.rd_type==0 && ex_mem.rd==0)){
-                  std::cout<<"alu result rs1 is ex "<<ex_mem.alu_result;
                   id_ex.reg1_val=ex_mem.alu_result;
                 }
               }
@@ -120,16 +111,12 @@ bool stall=false;
                 }
               }
             }
-
         }
     }
-
-
     if(stall){
         UpdateProgramCounter(-4);
         id_ex.valid=false;
     }
-
 }
 void Forward::Control_Hazard(){
     bool branch_stall=false;
@@ -162,18 +149,6 @@ void Forward::Fetch() {
 }
 
 
-/**
- * @brief Decodes instructions, reads from register files, and handles register typing.
- */
-/**
- * @brief Decodes instructions, reads from register files, and handles register typing.
- */
-/**
- * @brief Decodes instructions, reads from register files, and handles register typing.
- */
-/**
- * @brief Decodes instructions, reads from register files, and handles register typing.
- */
 void Forward::Decode() {
     // If the previous stage is invalid (e.g., stall), pass the bubble
     if (!if_id.valid) {
@@ -1220,7 +1195,7 @@ void Forward::Run() {
   uint64_t instruction_executed = 0;
   int count=1;
   bool prev_stall=false;
-  while (!stop_requested_  && count<500 &&(program_counter_  < program_size_ + 16)) {
+  while (!stop_requested_  && count<2000 &&(program_counter_  < program_size_ + 16)) {
     //if (instruction_executed > vm_config::config.getInstructionExecutionLimit())
     //break
 
